@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>TCG — Você vs CPU</title>
+<style>
+  body { font-family:Arial,sans-serif; margin:0; background:#f0f0f0; display:flex; flex-direction:column; height:100vh; }
+  header, footer { width:100%; text-align:center; padding:10px; background:#222; color:#fff; }
+  #npcSection, #playerSection { width:100%; display:flex; flex-direction:column; align-items:center; padding:10px 0; }
+  #npcSection { justify-content:flex-start; }
+  #playerSection { margin-top:auto; justify-content:flex-end; }
+  .info-bar { width:90%; display:flex; align-items:center; gap:10px; }
+  .zone { display:flex; justify-content:center; gap:15px; margin:10px 0; }
+  .bar-container { position:relative; width:200px; height:25px; background:#ccc; border-radius:15px; overflow:hidden; cursor:pointer; }
+  .bar-fill { height:100%; transition:width .3s; }
+  .bar-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:bold; }
+  .card { background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,.2); width:119px; text-align:center; cursor:pointer; position:relative; transition:transform .3s; }
+  .card img { width:119px; height:164px; object-fit:cover; border-top-left-radius:8px; border-top-right-radius:8px; }
+  .selected { outline:3px solid #007BFF; }
+  .overlay-win::after { content:""; position:absolute; inset:0; background:rgba(0,255,0,0.3); border-radius:8px; }
+  .overlay-loss::after { content:""; position:absolute; inset:0; background:rgba(255,0,0,0.3); border-radius:8px; }
+  .overlay-tie::after { content:""; position:absolute; inset:0; background:rgba(128,128,128,0.3); border-radius:8px; }
+  #fightArea { flex:1; display:none; justify-content:center; align-items:center; gap:50px; }
+  #overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.9); justify-content:center; align-items:center; z-index:1000; }
+  #overlay img { max-width:90vw; max-height:90vh; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TCG — Você vs CPU</h1>
+  <button id="forfeitBtn">Desistir (-1 Coin)</button>
+  <div><strong>Therian Coins:</strong> <span id="playerCoins">0</span></div>
+</header>
+
+<div id="npcSection">
+  <div class="info-bar">
+    <strong>Aura NPC:</strong> <span id="cpuAura">10</span>
+    <div class="bar-container" id="cpuBar"><div class="bar-fill" id="cpuFill"></div><div class="bar-text" id="cpuText">10</div></div>
+    <strong>Coins NPC:</strong> <span id="cpuCoins">0</span>
+  </div>
+  <section id="cpuArea" class="zone"></section>
+</div>
+
+<div id="fightArea"></div>
+
+<div id="playerSection">
+  <section id="playerArea" class="zone"></section>
+  <div class="info-bar">
+    <div class="bar-container" id="playerBar"><div class="bar-fill" id="playerFill"></div><div class="bar-text" id="playerText">10</div></div>
+    <strong>Aura Você:</strong> <span id="playerAura">10</span>
+  </div>
+</div>
+
+<div id="overlay" oncontextmenu="event.preventDefault(); closeOverlay()">
+  <img id="overlayImg" src="" alt="Carta Ampliada"/>
+</div>
+
+<footer>&copy; Jogo TCG</footer>
+
+<script src="cards.js"></script>
+<script>
+const state = JSON.parse(localStorage.getItem('tcgState')) || { therianCoins:400, deck:[], collection:{} };
+let playerCoins = state.therianCoins, cpuCoins = 0;
+document.getElementById('playerCoins').textContent = playerCoins;
+
+// Redirect if deck incomplete
+if(state.deck.length !== 10){
+  alert('Precisas de selecionar 10 cartas no Galeria antes de jogar.');
+  location.href = 'gallery.html';
+}
+
+document.getElementById('forfeitBtn').onclick = () => {
+  if(confirm('Desistir custa 1 Therian Coin. Confirmar?')){
+    playerCoins = Math.max(0, playerCoins - 1);
+    state.therianCoins = playerCoins;
+    localStorage.setItem('tcgState', JSON.stringify(state));
+    location.href = 'menu.html';
+  }
+};
+
+function shuffle(arr){ return arr.sort(()=>Math.random()-0.5); }
+function clone(card){ return {...card, played:false, outcome:null}; }
+
+// Prepare decks
+const playerCards = shuffle(state.deck).slice(0,4).map(id=>clone(TCG_CARDS.find(c=>c.id===id)));
+const cpuPool = TCG_CARDS.filter(c=>!state.deck.includes(c.id));
+const cpuCards = shuffle(cpuPool).slice(0,4).map(c=>clone(c));
+
+let playerTP=10, cpuTP=10, playerAura=10, cpuAura=10, selectedIndex=null, selectedTP=0, round=1;
+
+const cpuArea=document.getElementById('cpuArea'), playerArea=document.getElementById('playerArea'),
+      cpuAuraSpan=document.getElementById('cpuAura'), playerAuraSpan=document.getElementById('playerAura'),
+      cpuCoinsSpan=document.getElementById('cpuCoins');
+
+function render(){
+  playerAuraSpan.textContent = playerAura;
+  cpuAuraSpan.textContent = cpuAura;
+  cpuCoinsSpan.textContent = cpuCoins;
+  updateBar('cpu', cpuTP);
+  updateBar('player', playerTP);
+  cpuArea.innerHTML=''; playerArea.innerHTML='';
+  cpuCards.forEach((c,i)=> cpuArea.appendChild(createCard(c,i,'cpu')));
+  playerCards.forEach((c,i)=> playerArea.appendChild(createCard(c,i,'player')));
+  selectedIndex=null; selectedTP=0;
+}
+
+function createCard(card,i,owner){
+  const el=document.createElement('div'); el.className='card';
+  if(card.played) el.classList.add(card.outcome==='win'?'overlay-win': card.outcome==='loss'?'overlay-loss':'overlay-tie');
+  if(owner==='player'&&!card.played) el.onclick=()=>selectCard(el,i);
+  const img=document.createElement('img'); img.src=card.img; img.alt=card.name;
+  img.onclick=e=>{ if(overlay.style.display==='flex'){closeOverlay(); e.stopPropagation()}};
+  el.oncontextmenu=e=>{e.preventDefault(); showOverlay(card.img)};
+  el.append(img);
+  const info=document.createElement('div'); info.className='card-info';
+  info.innerHTML=`<strong>${card.name}</strong><br>ATK:${card.atk} Aura:${card.aura}`;
+  el.append(info);
+  return el;
+}
+
+function selectCard(el,i){
+  document.querySelectorAll('#playerArea .card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected'); selectedIndex=i;
+}
+
+function showOverlay(src){ document.getElementById('overlayImg').src=src; document.getElementById('overlay').style.display='flex'; }
+function closeOverlay(){ document.getElementById('overlay').style.display='none'; }
+
+function updateBar(who,val){
+  const fill=document.getElementById(who+'Fill'), text=document.getElementById(who+'Text');
+  const pct=Math.max(0, Math.min(val*10,100));
+  fill.style.width=pct+'%'; text.textContent=val;
+  fill.style.background = val>=7?'green': val>=4?'orange': val>0?'red':'gray';
+}
+
+document.getElementById('playerBar').onclick=e=>{
+  if(selectedIndex===null) return alert('Escolhe uma carta.');
+  const rect=e.currentTarget.getBoundingClientRect();
+  selectedTP=Math.floor(((e.clientX-rect.left)/rect.width)*playerTP);
+  selectedTP=Math.max(0,Math.min(selectedTP,playerTP));
+  updateBar('player', playerTP-selectedTP);
+  playRound();
+};
+
+function cpuChoose(){
+  const avail=cpuCards.filter(c=>!c.played);
+  const idx=Math.floor(Math.random()*avail.length);
+  const tp=Math.floor(Math.random()*(cpuTP+1));
+  cpuTP-=tp; updateBar('cpu',cpuTP);
+  return {card:avail[idx], tp};
+}
+
+function playRound(){
+  const pc=playerCards[selectedIndex];
+  playerTP-=selectedTP;
+  const cpuPlay=cpuChoose();
+  const powerP=pc.atk*selectedTP, powerC=cpuPlay.card.atk*cpuPlay.tp;
+  let outcome={player:'tie',cpu:'tie'};
+  if(powerP>powerC){ outcome={player:'win',cpu:'loss'}; cpuAura-=pc.aura; }
+  else if(powerP<powerC){ outcome={player:'loss',cpu:'win'}; playerAura-=cpuPlay.card.aura; }
+  pc.played=true; pc.outcome=outcome.player;
+  cpuPlay.card.played=true; cpuPlay.card.outcome=outcome.cpu;
+  showFight(pc,cpuPlay.card);
+  round++; selectedIndex=null; selectedTP=0;
+  if(playerAura<=0||cpuAura<=0||round>4) setTimeout(endGame,500);
+}
+
+function showFight(pc,cc){
+  const fight=document.getElementById('fightArea');
+  fight.innerHTML=''; fight.append(createCard(cc,null,'fight'),createCard(pc,null,'fight'));
+  fight.style.display='flex';
+  setTimeout(()=>{ fight.style.display='none'; render(); },2000);
+}
+
+function endGame(){
+  const winner = playerAura>cpuAura?'player': cpuAura>playerAura?'cpu':null;
+  if(winner==='player'){ playerCoins+=playerAura; alert(`Você venceu! Ganhou ${playerAura} Coins.`); }
+  else if(winner==='cpu'){ cpuCoins+=cpuAura; alert(`Você perdeu! NPC ganhou ${cpuAura} Coins.`); }
+  else alert('Empate — ninguém ganha coins.');
+  state.therianCoins=playerCoins;
+  localStorage.setItem('tcgState', JSON.stringify(state));
+  location.href='menu.html';
+}
+
+render();
+</script>
+</body>
+</html>
