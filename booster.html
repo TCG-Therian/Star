@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Booster Pack — TCG</title>
+<style>
+  body { font-family:Arial,sans-serif; margin:0; background:#f0f0f0; display:flex; flex-direction:column; height:100vh; }
+  header { background:#222; color:#fff; padding:15px; text-align:center; }
+  #coins { font-size:1.2rem; margin-top:5px; }
+  main { flex:1; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  button { padding:10px 20px; margin:10px; font-size:1rem; cursor:pointer; }
+  button:disabled { opacity:0.5; cursor:not-allowed; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:10px; margin-top:20px; }
+  .cards img { width:100px; height:140px; object-fit:cover; border-radius:6px; }
+  footer { text-align:center; padding:10px; background:#222; color:#fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Booster Pack</h1>
+  <div id="coins">Therian Coins: 0</div>
+</header>
+
+<main>
+  <button id="evenPackBtn">Comprar Booster Par (100 Coins)</button>
+  <button id="oddPackBtn">Comprar Booster Ímpar (100 Coins)</button>
+  <div class="cards" id="revealArea"></div>
+  <button id="backBtn" style="display:none">Voltar ao Menu</button>
+</main>
+
+<footer>&copy; Jogo TCG</footer>
+
+<script src="cards.js"></script>
+<script>
+const defaultState = { therianCoins:400, collection:{}, deck:[] };
+let state = JSON.parse(localStorage.getItem('tcgState')) || defaultState;
+state.therianCoins = state.therianCoins ?? defaultState.therianCoins;
+localStorage.setItem('tcgState', JSON.stringify(state));
+
+let coins = state.therianCoins;
+const coinsEl = document.getElementById('coins');
+const evenBtn = document.getElementById('evenPackBtn');
+const oddBtn  = document.getElementById('oddPackBtn');
+const reveal  = document.getElementById('revealArea');
+const backBtn = document.getElementById('backBtn');
+
+coinsEl.textContent = `Therian Coins: ${coins}`;
+updateButtons();
+
+function updateButtons() {
+  evenBtn.disabled = oddBtn.disabled = coins < 100;
+}
+
+function weightedDraw(pool) {
+  const weights = pool.map(c => c.rarity === 'common' ? 60 : c.rarity === 'rare' ? 30 : 10);
+  const drawn = [];
+  for (let i = 0; i < 3; i++) {
+    const total = weights.reduce((a,b)=>a+b,0);
+    let r = Math.random() * total;
+    let idx = 0;
+    while (r > weights[idx]) { r -= weights[idx]; idx++; }
+    drawn.push(pool[idx]);
+    pool.splice(idx,1);
+    weights.splice(idx,1);
+  }
+  return drawn;
+}
+
+function buy(pack) {
+  if (coins < 100) return;
+  coins -= 100;
+  state.therianCoins = coins;
+  coinsEl.textContent = `Therian Coins: ${coins}`;
+  updateButtons();
+
+  const pool = TCG_CARDS.filter(c => c.pack === pack);
+  const drawn = weightedDraw([...pool]);
+  reveal.innerHTML = '';
+  drawn.forEach(card => {
+    state.collection[card.id] = (state.collection[card.id] || 0) + 1;
+    const img = document.createElement('img');
+    img.src = card.img;
+    img.alt = card.name;
+    reveal.appendChild(img);
+  });
+
+  localStorage.setItem('tcgState', JSON.stringify(state));
+  evenBtn.style.display = oddBtn.style.display = 'none';
+  backBtn.style.display = 'block';
+}
+
+evenBtn.onclick = () => buy('even');
+oddBtn.onclick  = () => buy('odd');
+backBtn.onclick = () => location.href = 'menu.html';
+</script>
+
+</body>
+</html>

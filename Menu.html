@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>TCG — Menu Principal</title>
+<style>
+  body { margin:0; font-family:Arial,sans-serif; background:#f0f0f0; display:flex; flex-direction:column; align-items:center; height:100vh; }
+  header { width:100%; background:#222; color:#fff; padding:15px; text-align:center; }
+  #coinsDisplay { margin-top:5px; font-size:1.2rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:20px; width:90%; max-width:600px; margin-top:40px; }
+  .btn { background:#fff; border:2px solid #222; border-radius:8px; padding:20px; text-align:center; font-weight:bold; color:#222; text-decoration:none; cursor:pointer; transition:background .2s; }
+  .btn:hover { background:#ddd; }
+  #fileInput { display:none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Menu Principal</h1>
+  <div id="coinsDisplay">Therian Coins: 0</div>
+</header>
+
+<div class="grid">
+  <a class="btn" href="vs-npc.html">Jogador vs NPC</a>
+  <a class="btn" href="vs-player.html">Jogador vs Jogador</a>
+  <a class="btn" href="booster.html">Booster Pack</a>
+  <a class="btn" href="gallery.html">Galeria de Cartas</a>
+  <button class="btn" id="saveBtn">Salvar Progresso</button>
+  <button class="btn" id="loadBtn">Carregar Progresso</button>
+  <button class="btn" id="resetBtn">Start Completely New Game</button>
+</div>
+
+<input type="file" id="fileInput" accept=".txt"/>
+
+<script>
+const defaultState = { therianCoins:400, deck:[], collection:{} };
+function genDeviceId() { return crypto.randomUUID(); }
+
+let deviceId = localStorage.getItem('deviceId') || genDeviceId();
+localStorage.setItem('deviceId', deviceId);
+
+let state = JSON.parse(localStorage.getItem('tcgState')) || defaultState;
+localStorage.setItem('tcgState', JSON.stringify(state));
+document.getElementById('coinsDisplay').textContent = `Therian Coins: ${state.therianCoins}`;
+
+document.getElementById('saveBtn').onclick = () => {
+  const payload = { deviceId, ...state };
+  const blob = new Blob([btoa(JSON.stringify(payload))], { type:'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tcg_save.txt';
+  a.click();
+};
+
+document.getElementById('loadBtn').onclick = () => document.getElementById('fileInput').click();
+
+document.getElementById('fileInput').onchange = async e => {
+  const text = await e.target.files[0].text();
+  try {
+    const loaded = JSON.parse(atob(text.trim()));
+    if (!loaded.deviceId || loaded.deviceId === deviceId) {
+      alert('Não é possível carregar progresso deste dispositivo.');
+      return;
+    }
+    state = { therianCoins:loaded.therianCoins, deck:loaded.deck, collection:loaded.collection };
+    deviceId = loaded.deviceId;
+    localStorage.setItem('deviceId', deviceId);
+    localStorage.setItem('tcgState', JSON.stringify(state));
+    document.getElementById('coinsDisplay').textContent = `Therian Coins: ${state.therianCoins}`;
+    alert('Progresso carregado com sucesso!');
+  } catch {
+    alert('Ficheiro inválido ou corrompido.');
+  }
+};
+
+document.getElementById('resetBtn').onclick = () => {
+  if (confirm('Irás perder todo o progresso. Continuar?')) {
+    localStorage.setItem('tcgState', JSON.stringify(defaultState));
+    deviceId = genDeviceId();
+    localStorage.setItem('deviceId', deviceId);
+    document.getElementById('coinsDisplay').textContent = `Therian Coins: ${defaultState.therianCoins}`;
+    alert('Jogo reiniciado.');
+  }
+};
+</script>
+</body>
+</html>
